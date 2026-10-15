@@ -24,10 +24,12 @@ int main(void)
     Circle turret(0.0f, -0.85, 0.07f, 0.5f, 0.5f, 0.5f);
     Circle ball(0.0f, -0.85f, 0.04f, 1.0f, 1.0f, 1.0f);
 	Line line(0.0f, -0.85f, 0.0f, -0.65f, 5.0f);
+	int direction = 0; // 0 = no movement, -1 = left, 1 = right
+
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
-        glfwSetKeyCallback(window, glfwKeyCallbackJ); // Set the key callback for the window
+		processInput(window, direction); // Process user input
 
         /* Render here */
 		glClearColor(0.08f, 0.28f, 0.42f, 1.0f);
@@ -35,6 +37,7 @@ int main(void)
 
 		turret.Draw(shaderProgram); // Draw the ball
 		ball.Draw(shaderProgram); // Draw the ball
+		line.Update(direction); // Update the line's position based on user input
 		line.Draw(shaderProgram); // Draw the line
 
         /* Swap front and back buffers */

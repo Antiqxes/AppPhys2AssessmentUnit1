@@ -5,6 +5,7 @@
 #include<iostream>
 #include<cmath>
 #include<vector>
+#include<algorithm>
 
 //make functions in this header file instead of main
 
@@ -28,77 +29,6 @@ void main()
 }
 )";
 } 
-
-// OpenGL setup
-namespace {
-	GLuint compileShaderJ(const char* source, GLenum shaderType) {
-		GLuint shader = glCreateShader(shaderType);
-		glShaderSource(shader, 1, &source, NULL);
-		glCompileShader(shader);
-		// Check for compilation errors
-		GLint success;
-		glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-		if (!success) {
-			char infoLog[512];
-			glGetShaderInfoLog(shader, 512, NULL, infoLog);
-			std::cout << "ERROR::SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
-			return 0;
-		}
-		return shader;
-	}
-
-	GLuint createShaderProgramJ(const char* vertexSource, const char* fragmentSource) {
-		GLuint vertexShader = compileShaderJ(vertexSource, GL_VERTEX_SHADER);
-		GLuint fragmentShader = compileShaderJ(fragmentSource, GL_FRAGMENT_SHADER);
-		if (vertexShader == 0 || fragmentShader == 0) {
-			return 0;
-		}
-		GLuint shaderProgram = glCreateProgram();
-		glAttachShader(shaderProgram, vertexShader);
-		glAttachShader(shaderProgram, fragmentShader);
-		glLinkProgram(shaderProgram);
-		// Check for linking errors
-		GLint success;
-		glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-		if (!success) {
-			char infoLog[512];
-			glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-			std::cout << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-			return 0;
-		}
-		glDeleteShader(vertexShader);
-		glDeleteShader(fragmentShader);
-		return shaderProgram;
-	}
-
-	void setOpenGLContextVersionJ(int major, int minor) {
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
-		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	}
-
-	void initializeGLADJ() {
-		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-			std::cout << "Failed to initialize GLAD" << std::endl;
-			glfwTerminate();
-			exit(-1);
-		}
-	}
-
-	void glfwKeyCallbackJ(GLFWwindow* window, int key, int scancode, int action, int mods) {
-		// GLFW automatically populates 'key' and 'action' based on what the user pressed
-		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		{
-			glfwSetWindowShouldClose(window, true);
-		}
-
-		// You can easily add more user inputs here later:
-		if (key == GLFW_KEY_W && (action == GLFW_PRESS || action == GLFW_REPEAT))
-		{
-			// Move player forward, etc.
-		}
-	}
-}
 
 //draw
 namespace {
@@ -194,6 +124,8 @@ namespace {
 		Vertex end;
 		float thickness;
 
+		float currentAngle = 90.0f; // Track the cumulative rotation angle
+
 		Line(float startX, float startY, float endX, float endY, float t)
 			: start{ startX, startY, 0.0f },  // Initialize start Vertex (assuming Z is 0 for 2D)
 			end{ endX, endY, 0.0f },        // Initialize end Vertex
@@ -216,6 +148,28 @@ namespace {
 
 			glBindBuffer(GL_ARRAY_BUFFER, 0);
 			glBindVertexArray(0);
+		}
+
+		void Update(int direction, float speed = 1.2f) {
+			if (direction == 0) return; // No rotation needed
+
+			// Calculate the core vector length and angle from start to end (only once)
+			float dx = end.x - start.x;
+			float dy = end.y - start.y;
+			float length = std::sqrt(dx * dx + dy * dy);
+
+			// Modify our internal angle tracking based on input direction
+			// Multiply by a step speed (e.g., 2.0f degrees per update step)
+			currentAngle += (direction * speed);
+
+			currentAngle = std::clamp(currentAngle, 20.0f, 160.0f); // Clamp between 0 and 180 degrees
+
+			// Convert the updated cumulative angle to radians for C++ trig
+			float radians = currentAngle * (3.14159265f / 180.0f);
+
+			// Re-calculate the absolute end coordinates relative to the start pivot point
+			end.x = start.x + (length * std::cos(radians));
+			end.y = start.y + (length * std::sin(radians));
 		}
 
 		// Keep the same draw function from earlier...
@@ -243,4 +197,77 @@ namespace {
 			glLineWidth(1.0f);//reset thickness
 		}
 	};
+}
+
+// OpenGL setup
+namespace {
+	GLuint compileShaderJ(const char* source, GLenum shaderType) {
+		GLuint shader = glCreateShader(shaderType);
+		glShaderSource(shader, 1, &source, NULL);
+		glCompileShader(shader);
+		// Check for compilation errors
+		GLint success;
+		glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+		if (!success) {
+			char infoLog[512];
+			glGetShaderInfoLog(shader, 512, NULL, infoLog);
+			std::cout << "ERROR::SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
+			return 0;
+		}
+		return shader;
+	}
+
+	GLuint createShaderProgramJ(const char* vertexSource, const char* fragmentSource) {
+		GLuint vertexShader = compileShaderJ(vertexSource, GL_VERTEX_SHADER);
+		GLuint fragmentShader = compileShaderJ(fragmentSource, GL_FRAGMENT_SHADER);
+		if (vertexShader == 0 || fragmentShader == 0) {
+			return 0;
+		}
+		GLuint shaderProgram = glCreateProgram();
+		glAttachShader(shaderProgram, vertexShader);
+		glAttachShader(shaderProgram, fragmentShader);
+		glLinkProgram(shaderProgram);
+		// Check for linking errors
+		GLint success;
+		glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+		if (!success) {
+			char infoLog[512];
+			glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+			std::cout << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+			return 0;
+		}
+		glDeleteShader(vertexShader);
+		glDeleteShader(fragmentShader);
+		return shaderProgram;
+	}
+
+	void setOpenGLContextVersionJ(int major, int minor) {
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	}
+
+	void initializeGLADJ() {
+		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+			std::cout << "Failed to initialize GLAD" << std::endl;
+			glfwTerminate();
+			exit(-1);
+		}
+	}
+
+	void processInput(GLFWwindow* window, int &direction) {
+		// Check continuous pressing of W/S/A/D keys
+		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+			glfwSetWindowShouldClose(window, true);
+		}
+		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+			direction = 1; // Rotate counter-clockwise
+		}
+		else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+			direction = -1; // Rotate clockwise
+		}
+		else {
+			direction = 0; // No rotation
+		}
+	}
 }

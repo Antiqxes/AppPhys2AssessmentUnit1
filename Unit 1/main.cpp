@@ -9,7 +9,7 @@ int main(void)
         return -1;
 
     /* Create a windowed mode window and its OpenGL context */
-    GLFWwindow* window = glfwCreateWindow(640, 480, "OpenGLTemplate", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(600, 600, "Unit 1 - Bartulin", NULL, NULL);
 	// check if the window was created successfully
     if (!window) {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -28,6 +28,7 @@ int main(void)
         glfwSetKeyCallback(window, glfwKeyCallbackJ); // Set the key callback for the window
 
         /* Render here */
+		glClearColor(0.08f, 0.28f, 0.42f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         /* Swap front and back buffers */

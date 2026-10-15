@@ -42,4 +42,7 @@
   <ItemGroup>
     <Library Include="dependencies\lib\glfw3.lib" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include=".gitignore" />
+  </ItemGroup>
 </Project>

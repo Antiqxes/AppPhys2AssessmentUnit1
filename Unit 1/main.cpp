@@ -4,24 +4,24 @@
 int main(void)
 {
 	setOpenGLContextVersionJ(3, 3); // Set OpenGL context version to 3.3
-
     if (!glfwInit())
         return -1;
-
-    /* Create a windowed mode window and its OpenGL context */
-    GLFWwindow* window = glfwCreateWindow(600, 600, "Unit 1 - Bartulin", NULL, NULL);
+    
+    GLFWwindow* window = glfwCreateWindow(600, 600, "Unit 1 - Bartulin", NULL, NULL);/* Create a windowed mode window and its OpenGL context */
 	// check if the window was created successfully
     if (!window) {
         std::cout << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         exit(-1);
     }
-	//set the current context to the window we just created
-    glfwMakeContextCurrent(window);
+	
+    glfwMakeContextCurrent(window);//set the current context to the window we just created
 
-	// Initialize GLAD before calling any OpenGL functions
-    initializeGLADJ();
+    initializeGLADJ(); // Initialize GLAD before calling any OpenGL functions
 
+	GLuint shaderProgram = createShaderProgramJ(vertexSource, fragmentSource); // Create the shader program
+
+    Circle ball(0.0f, -0.85, 0.07f, 0.5f, 0.5f, 0.5f);
     /* Loop until the user closes the window */
     while (!glfwWindowShouldClose(window))
     {
@@ -31,6 +31,7 @@ int main(void)
 		glClearColor(0.08f, 0.28f, 0.42f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+		ball.Draw(shaderProgram); // Draw the ball
         /* Swap front and back buffers */
         glfwSwapBuffers(window);
 

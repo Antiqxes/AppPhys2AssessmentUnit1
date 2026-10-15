@@ -165,6 +165,8 @@ namespace {
 
 		// Binds state, updates shader translation offset uniform, and draws
 		void Draw(unsigned int shaderProgram) const {
+			glBindVertexArray(mesh.VAO);
+			
 			glUseProgram(shaderProgram);
 
 			// Send current circle position struct fields directly to your shader uniform
@@ -175,7 +177,6 @@ namespace {
 			glUniform4f(colorLocation, color.x, color.y, color.z, 1.0f);
 
 			// Bind VAO and draw as a solid filled triangle fan
-			glBindVertexArray(mesh.VAO);
 			glDrawArrays(GL_TRIANGLE_FAN, 0, mesh.vertexCount);
 			glBindVertexArray(0);
 		}
@@ -184,6 +185,62 @@ namespace {
 		void Destroy() {
 			glDeleteVertexArrays(1, &mesh.VAO);
 			glDeleteBuffers(1, &mesh.VBO);
+		}
+	};
+
+	struct Line {
+		Mesh mesh;
+		Vertex start;
+		Vertex end;
+		float thickness;
+
+		Line(float startX, float startY, float endX, float endY, float t)
+			: start{ startX, startY, 0.0f },  // Initialize start Vertex (assuming Z is 0 for 2D)
+			end{ endX, endY, 0.0f },        // Initialize end Vertex
+			thickness(t)                  // Initialize thickness
+		{
+			// 1. Generate the OpenGL handles inside your mesh struct
+			glGenVertexArrays(1, &mesh.VAO);
+			glGenBuffers(1, &mesh.VBO);
+
+			// 2. Setup the buffer layout
+			glBindVertexArray(mesh.VAO);
+			glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
+
+			// Allocate memory on the GPU for 2 vertices
+			glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(Vertex), nullptr, GL_DYNAMIC_DRAW);
+
+			// Tell OpenGL how to unpack x, y, z from our Vertex struct
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+			glEnableVertexAttribArray(0);
+
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			glBindVertexArray(0);
+		}
+
+		// Keep the same draw function from earlier...
+		void Draw(unsigned int shaderProgram) {
+			Vertex vertices[2] = { start, end };
+			
+			glBindVertexArray(mesh.VAO);
+			glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
+
+			glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+			glLineWidth(thickness);
+
+			glUseProgram(shaderProgram);
+			int offsetLocation = glGetUniformLocation(shaderProgram, "uOffset");
+			glUniform3f(offsetLocation, 0.0f, 0.0f, 0.0f); // No offset for lines
+			int colorLoc = glGetUniformLocation(shaderProgram, "uColor");
+			glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f); // Gray color
+
+			glBindVertexArray(mesh.VAO);
+			glDrawArrays(GL_LINES, 0, 2);
+			glBindVertexArray(0);
+
+			glLineWidth(1.0f);//reset thickness
 		}
 	};
 }

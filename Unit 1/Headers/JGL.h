@@ -44,6 +44,7 @@ namespace {
 	struct Circle {
 		Mesh mesh; // Mesh representation of the circle
 		Vertex position; // Center coordinates
+		Vertex velocity; // Velocity for movement
 		Vertex color; // Color of the circle
 		float radius; // Radius of the circle
 
@@ -66,6 +67,7 @@ namespace {
 			return vertices;
 		}
 
+		Circle() = default;
 		// Constructor: Initializes properties and uploads vertices to the GPU
 		Circle(float startX, float startY, float r, float red, float green, float blue, int segments = 32) {
 			position = { startX, startY, 0.0f };
@@ -112,9 +114,20 @@ namespace {
 		}
 
 		// Clean up graphics memory allocated inside the Mesh fields
-		void Destroy() {
-			glDeleteVertexArrays(1, &mesh.VAO);
-			glDeleteBuffers(1, &mesh.VBO);
+		void Update(float deltaTime) {
+			// 1. Move the ball
+			position.x += velocity.x * deltaTime;
+			position.y += velocity.y * deltaTime;
+
+			// 2. Setup bounds based on its own radius
+			float boundaryX = 1.0f - radius;
+			float boundaryY = 1.0f - radius;
+
+			// 3. Bounce logic
+			if (position.x > boundaryX) { position.x = boundaryX; velocity.x *= -1.0f; }
+			if (position.x < -boundaryX) { position.x = -boundaryX; velocity.x *= -1.0f; }
+			if (position.y > boundaryY) { position.y = boundaryY; velocity.y *= -1.0f; }
+			if (position.y < -boundaryY) { position.y = -boundaryY; velocity.y *= -1.0f; }
 		}
 	};
 
@@ -151,23 +164,16 @@ namespace {
 		}
 
 		void Update(int direction, float speed = 1.2f) {
-			if (direction == 0) return; // No rotation needed
+			if (direction == 0) return;
 
-			// Calculate the core vector length and angle from start to end (only once)
 			float dx = end.x - start.x;
 			float dy = end.y - start.y;
 			float length = std::sqrt(dx * dx + dy * dy);
 
-			// Modify our internal angle tracking based on input direction
-			// Multiply by a step speed (e.g., 2.0f degrees per update step)
 			currentAngle += (direction * speed);
+			currentAngle = std::clamp(currentAngle, 20.0f, 160.0f);
 
-			currentAngle = std::clamp(currentAngle, 20.0f, 160.0f); // Clamp between 0 and 180 degrees
-
-			// Convert the updated cumulative angle to radians for C++ trig
 			float radians = currentAngle * (3.14159265f / 180.0f);
-
-			// Re-calculate the absolute end coordinates relative to the start pivot point
 			end.x = start.x + (length * std::cos(radians));
 			end.y = start.y + (length * std::sin(radians));
 		}
@@ -197,6 +203,8 @@ namespace {
 			glLineWidth(1.0f);//reset thickness
 		}
 	};
+
+	
 }
 
 // OpenGL setup
@@ -255,7 +263,7 @@ namespace {
 		}
 	}
 
-	void processInput(GLFWwindow* window, int &direction) {
+	void processInput(GLFWwindow* window, int &direction, Line &line, std::vector<std::unique_ptr<Circle>> &firedBalls) {
 		// Check continuous pressing of W/S/A/D keys
 		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 			glfwSetWindowShouldClose(window, true);
@@ -269,5 +277,29 @@ namespace {
 		else {
 			direction = 0; // No rotation
 		}
+
+		static bool spaceWasPressed = false;
+		bool spaceIsPressed = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
+		if (spaceIsPressed && !spaceWasPressed) {
+			// A. Find the vector direction of the line
+			float dx = line.end.x - line.start.x;
+			float dy = line.end.y - line.start.y;
+			float len = std::sqrt(dx * dx + dy * dy);
+
+			float dirX = dx / len;
+			float dirY = dy / len;
+
+			// B. Instantiate a NEW ball at the TIP of the line
+			auto newBall = std::make_unique<Circle>(line.end.x, line.end.y, 0.04f, 1.0f, 1.0f, 1.0f);
+
+			// C. Give the ball an internal velocity vector (Euler component)
+			float launchSpeed = 2.5f;
+			newBall->velocity.x = dirX * launchSpeed;
+			newBall->velocity.y = dirY * launchSpeed;
+
+			// D. Move it into your manager vector safely without copies
+			firedBalls.push_back(std::move(newBall));
+		}
+		spaceWasPressed = spaceIsPressed;
 	}
 }

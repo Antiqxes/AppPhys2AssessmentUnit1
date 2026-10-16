@@ -32,334 +32,266 @@ void main()
 
 //draw
 namespace {
-	struct Vertex {
-		float x, y, z; // Position coordinates
-	};
 
-	struct Mesh {
-		unsigned int VAO, VBO; // Vertex Array Object and Vertex Buffer Object
-		int vertexCount; // Number of vertices in the mesh
-	};
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <vector>
+#include <cmath>
+#include <iostream>
 
-	struct Circle {
-		Mesh mesh; // Mesh representation of the circle
-		Vertex position; // Center coordinates
-		Vertex velocity; // Velocity for movement
-		Vertex color; // Color of the circle
-		float radius; // Radius of the circle
-		float restitution; // Bounciness factor
+    // --- Configuration Constants ---
+    const int CONSTRAINT_ITERATIONS = 5;
+    const float GRAVITY = -1.8f;
+    const float DT = 1.0f / 60.0f;
+    const float POINT_RADIUS = 0.03f;
+    const float FLOOR_Y = -1.0f + POINT_RADIUS;
 
-		// Helper static function to generate local vertex positions
-		static std::vector<Vertex> GenerateVertices(float radius, int segments) {
-			std::vector<Vertex> vertices;
-			const float PI = 3.14159265359f;
+    // Colors
+    const float POINT_COLOR[3] = { 1.0f, 1.0f, 0.0f };       // Yellow
+    const float STICK_COLOR[3] = { 0.31f, 0.76f, 0.97f };    // Light Blue
 
-			// Anchor center point at local (0,0,0). 
-			// Your shader's uOffset uniform will move it to its world position.
-			vertices.push_back({ 0.0f, 0.0f, 0.0f });
+    // --- Simulation Structures ---
+    struct Point {
+        float x, y;
+        float oldX, oldY;
+        bool isPinned;
+    };
 
-			// Loop using <= to completely close the 360-degree loop shape
-			for (int i = 0; i <= segments; ++i) {
-				float theta = 2.0f * PI * float(i) / float(segments);
-				float x = radius * std::cos(theta);
-				float y = radius * std::sin(theta);
-				vertices.push_back({ x, y, 0.0f });
-			}
-			return vertices;
-		}
+    struct Stick {
+        int p1;
+        int p2;
+        float length;
+    };
 
-		Circle() = default;
-		// Constructor: Initializes properties and uploads vertices to the GPU
-		Circle(float startX, float startY, float r, float rest, float red, float green, float blue, int segments = 32) {
-			position = { startX, startY, 0.0f };
-			velocity = { 0.0f, 0.0f, 0.0f };
-			color = { red, green, blue };
-			radius = r;
-			restitution = rest;
+    std::vector<Point> points;
+    std::vector<Stick> sticks;
 
-			// Generate geometry locally
-			std::vector<Vertex> vertices = GenerateVertices(radius, segments);
-			mesh.vertexCount = static_cast<int>(vertices.size());
+    // --- Mouse Interaction State ---
+    bool isDragging = false;
+    int draggedPointIndex = -1;
+    float mouseX = 0.0f;
+    float mouseY = 0.0f;
+    int windowWidth = 800;
+    int windowHeight = 800;
 
-			// Generate and bind VAO / VBO buffers
-			glGenVertexArrays(1, &mesh.VAO);
-			glGenBuffers(1, &mesh.VBO);
+    // --- Initialize Simulation State ---
+    void initSimulation() {
+        points.clear();
+        sticks.clear();
 
-			glBindVertexArray(mesh.VAO);
-			glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
-			glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+        // 1. Structure A: The 10-Point Chain
+        for (int i = 0; i < 10; ++i) {
+            Point p;
+            p.x = -0.2f + 0.08f * i;
+            p.y = 0.9f;
+            p.oldX = p.x;
+            p.oldY = p.y;
+            p.isPinned = (i == 0);
+            points.push_back(p);
+        }
 
-			// Configure vertex positioning attribute (layout (location = 0) in vec3 aPos)
-			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
-			glEnableVertexAttribArray(0);
+        for (int i = 0; i < 9; ++i) {
+            Stick s;
+            s.p1 = i;
+            s.p2 = i + 1;
+            s.length = 0.08f;
+            sticks.push_back(s);
+        }
 
-			// Safely unbind buffers
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-			glBindVertexArray(0);
-		}
+        // 2. Structure B: The 5-Point Rigid Circle / Pentagon (Indices 10 to 14)
+        int circleStartIndex = points.size();
+        float centerX = 0.55f;
+        float centerY = 0.55f;
+        float radius = 0.18f;
+        const float PI = 3.1415926535f;
 
-		// Binds state, updates shader translation offset uniform, and draws
-		void Draw(unsigned int shaderProgram) const {
-			glBindVertexArray(mesh.VAO);
-			
-			glUseProgram(shaderProgram);
+        for (int i = 0; i < 5; ++i) {
+            float angleDeg = 90.0f + 72.0f * i;
+            float angleRad = angleDeg * PI / 180.0f;
 
-			// Send current circle position struct fields directly to your shader uniform
-			int offsetLocation = glGetUniformLocation(shaderProgram, "uOffset");
-			glUniform3f(offsetLocation, position.x, position.y, position.z);
+            Point p;
+            p.x = centerX + radius * std::cos(angleRad);
+            p.y = centerY + radius * std::sin(angleRad);
+            p.oldX = p.x;
+            p.oldY = p.y;
+            p.isPinned = false;
+            points.push_back(p);
+        }
 
-			int colorLocation = glGetUniformLocation(shaderProgram, "uColor");
-			glUniform4f(colorLocation, color.x, color.y, color.z, 1.0f);
+        for (int i = 0; i < 5; ++i) {
+            for (int j = i + 1; j < 5; ++j) {
+                int idx1 = circleStartIndex + i;
+                int idx2 = circleStartIndex + j;
 
-			// Bind VAO and draw as a solid filled triangle fan
-			glDrawArrays(GL_TRIANGLE_FAN, 0, mesh.vertexCount);
-			glBindVertexArray(0);
-		}
+                float dx = points[idx2].x - points[idx1].x;
+                float dy = points[idx2].y - points[idx1].y;
 
-		void ResolveBallCollisions(std::vector<std::unique_ptr<Circle>>& balls) {
-			// Loop through every unique pair of balls
-			for (size_t i = 0; i < balls.size(); ++i) {
-				for (size_t j = i + 1; j < balls.size(); ++j) {
-					Circle& b1 = *balls[i];
-					Circle& b2 = *balls[j];
+                Stick s;
+                s.p1 = idx1;
+                s.p2 = idx2;
+                s.length = std::sqrt(dx * dx + dy * dy);
+                sticks.push_back(s);
+            }
+        }
+    }
 
-					// 1. Calculate distance between centers
-					float dx = b2.position.x - b1.position.x;
-					float dy = b2.position.y - b1.position.y;
-					float distance = std::sqrt(dx * dx + dy * dy);
-					float minDistance = b1.radius + b2.radius;
+    // --- Physics Engine Step ---
+    void updateSimulation() {
+        // 1. Verlet Integration (Apply Gravity)
+        for (size_t i = 0; i < points.size(); ++i) {
+            auto& p = points[i];
+            if (p.isPinned) continue;
 
-					// Check if they are overlapping
-					if (distance < minDistance) {
-						// Prevent division by zero if they are perfectly on top of each other
-						if (distance == 0.0f) continue;
+            // Skip normal updates for the point locked to the mouse cursor
+            if (isDragging && (int)i == draggedPointIndex) continue;
 
-						// 2. Separate the balls (Resolve Overlap)
-						float overlap = minDistance - distance;
-						float nx = dx / distance; // Normal X
-						float ny = dy / distance; // Normal Y
+            float vx = p.x - p.oldX;
+            float vy = p.y - p.oldY;
 
-						// Push each ball away by half of the overlap
-						b1.position.x -= nx * overlap * 0.5f;
-						b1.position.y -= ny * overlap * 0.5f;
-						b2.position.x += nx * overlap * 0.5f;
-						b2.position.y += ny * overlap * 0.5f;
+            p.oldX = p.x;
+            p.oldY = p.y;
 
-						// 3. Calculate Relative Velocity along the collision normal
-						float kx = b1.velocity.x - b2.velocity.x;
-						float ky = b1.velocity.y - b2.velocity.y;
-						float vn = kx * nx + ky * ny; // Dot product
+            p.x += vx;
+            p.y += vy + GRAVITY * DT * DT;
+        }
 
-						// Only resolve if they are moving towards each other
-						if (vn > 0.0f) {
-							// Combine restitution (you can use an average of both balls)
-							float mixedRestitution = (b1.restitution + b2.restitution) * 0.5f;
+        // 2. Explicit Override for Dragged Point position
+        if (isDragging && draggedPointIndex >= 0 && draggedPointIndex < (int)points.size()) {
+            points[draggedPointIndex].x = mouseX;
+            points[draggedPointIndex].y = mouseY;
+        }
 
-							// Calculate impulse scalar (Assuming equal mass for simple geometry)
-							// If your balls have custom mass, the formula scales by mass.
-							float impulse = (1.0f + mixedRestitution) * vn * 0.5f;
+        // 3. Satisfy Constraints (5 iterations per frame)
+        for (int iter = 0; iter < CONSTRAINT_ITERATIONS; ++iter) {
+            // A. Resolve Stick Lengths
+            for (const auto& s : sticks) {
+                Point& p1 = points[s.p1];
+                Point& p2 = points[s.p2];
 
-							// Apply impulse to change velocities
-							b1.velocity.x -= impulse * nx;
-							b1.velocity.y -= impulse * ny;
-							b2.velocity.x += impulse * nx;
-							b2.velocity.y += impulse * ny;
-						}
-					}
-				}
-			}
-		}
+                float dx = p2.x - p1.x;
+                float dy = p2.y - p1.y;
+                float distance = std::sqrt(dx * dx + dy * dy);
 
+                if (distance == 0.0f) continue;
 
-		// Clean up graphics memory allocated inside the Mesh fields
-		void Update(float deltaTime, std::vector<std::unique_ptr<Circle>>& firedBalls) {
-			// 1. Move the ball
-			position.x += velocity.x * deltaTime;
-			position.y += velocity.y * deltaTime;
+                float diff = s.length - distance;
+                float percent = diff / distance / 2.0f;
+                float offsetX = dx * percent;
+                float offsetY = dy * percent;
 
-			// 2. Setup bounds based on its own radius
-			float boundaryX = 1.0f - radius;
-			float boundaryY = 1.0f - radius;
+                // Pinned points do not change positions. 
+                // Dragged points act as dynamic anchors during constraints.
+                bool p1Movable = !p1.isPinned && !(isDragging && s.p1 == draggedPointIndex);
+                bool p2Movable = !p2.isPinned && !(isDragging && s.p2 == draggedPointIndex);
 
-			// 3. Bounce logic
-			ResolveBallCollisions(firedBalls); // Call the collision resolution function
+                if (p1Movable && p2Movable) {
+                    p1.x -= offsetX;
+                    p1.y -= offsetY;
+                    p2.x += offsetX;
+                    p2.y += offsetY;
+                }
+                else if (p1Movable) {
+                    p1.x -= offsetX * 2.0f;
+                    p1.y -= offsetY * 2.0f;
+                }
+                else if (p2Movable) {
+                    p2.x += offsetX * 2.0f;
+                    p2.y += offsetY * 2.0f;
+                }
+            }
 
-			if (position.x > boundaryX) { position.x = boundaryX; velocity.x *= -restitution; }
-			if (position.x < -boundaryX) { position.x = -boundaryX; velocity.x *= -restitution; }
-			if (position.y > boundaryY) { position.y = boundaryY; velocity.y *= -restitution; }
-			if (position.y < -boundaryY) { position.y = -boundaryY; velocity.y *= -restitution; }
-		}
-	};
+            // B. Resolve Floor Clamp Collision (No bounce)
+            for (size_t i = 0; i < points.size(); ++i) {
+                auto& p = points[i];
+                if (p.isPinned) continue;
+                if (isDragging && (int)i == draggedPointIndex) continue;
 
-	struct Line {
-		Mesh mesh;
-		Vertex start;
-		Vertex end;
-		float thickness;
+                if (p.y < FLOOR_Y) {
+                    p.y = FLOOR_Y;
+                    p.oldY = p.y;
+                }
+            }
+        }
+    }
 
-		float currentAngle = 90.0f; // Track the cumulative rotation angle
+    // --- GLFW Interaction Callbacks ---
+    void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT) {
+            if (action == GLFW_PRESS) {
+                // Find nearest point
+                float minDistance = 9999.0f;
+                int targetIndex = -1;
 
-		Line(float startX, float startY, float endX, float endY, float t)
-			: start{ startX, startY, 0.0f },  // Initialize start Vertex (assuming Z is 0 for 2D)
-			end{ endX, endY, 0.0f },        // Initialize end Vertex
-			thickness(t)                  // Initialize thickness
-		{
-			// 1. Generate the OpenGL handles inside your mesh struct
-			glGenVertexArrays(1, &mesh.VAO);
-			glGenBuffers(1, &mesh.VBO);
+                for (size_t i = 0; i < points.size(); ++i) {
+                    float dx = points[i].x - mouseX;
+                    float dy = points[i].y - mouseY;
+                    float dist = std::sqrt(dx * dx + dy * dy);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        targetIndex = i;
+                    }
+                }
 
-			// 2. Setup the buffer layout
-			glBindVertexArray(mesh.VAO);
-			glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
+                // Lock onto point if it's reasonably near the click
+                if (targetIndex != -1 && minDistance < 0.4f) {
+                    isDragging = true;
+                    draggedPointIndex = targetIndex;
+                }
+            }
+            else if (action == GLFW_RELEASE) {
+                if (isDragging && draggedPointIndex >= 0) {
+                    // Instantly update old positions to match release velocity smoothly
+                    points[draggedPointIndex].oldX = points[draggedPointIndex].x;
+                    points[draggedPointIndex].oldY = points[draggedPointIndex].y;
+                }
+                isDragging = false;
+                draggedPointIndex = -1;
+            }
+        }
+    }
 
-			// Allocate memory on the GPU for 2 vertices
-			glBufferData(GL_ARRAY_BUFFER, 2 * sizeof(Vertex), nullptr, GL_DYNAMIC_DRAW);
+    void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+        // Map screen window coordinates [0, Width/Height] to OpenGL space [-1.0, 1.0]
+        mouseX = (2.0f * (float)xpos) / (float)windowWidth - 1.0f;
+        mouseY = 1.0f - (2.0f * (float)ypos) / (float)windowHeight;
+    }
 
-			// Tell OpenGL how to unpack x, y, z from our Vertex struct
-			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
-			glEnableVertexAttribArray(0);
+    void windowSizeCallback(GLFWwindow* window, int width, int height) {
+        windowWidth = width;
+        windowHeight = height;
+        glViewport(0, 0, width, height);
+    }
 
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-			glBindVertexArray(0);
-		}
+    // --- OpenGL Rendering Functions ---
+    void drawCircle(float cx, float cy, float r, int num_segments) {
+        glBegin(GL_TRIANGLE_FAN);
+        glColor3fv(POINT_COLOR);
+        glVertex2f(cx, cy);
+        for (int i = 0; i <= num_segments; i++) {
+            float theta = 2.0f * 3.1415926f * float(i) / float(num_segments);
+            float x = r * std::cos(theta);
+            float y = r * std::sin(theta);
+            glVertex2f(x + cx, y + cy);
+        }
+        glEnd();
+    }
 
-		void Update(int direction, float speed = 0.2f) {
-			if (direction == 0) return;
+    void render() {
+        glClear(GL_COLOR_BUFFER_BIT);
 
-			float dx = end.x - start.x;
-			float dy = end.y - start.y;
-			float length = std::sqrt(dx * dx + dy * dy);
+        // Draw Sticks (Lines)
+        glLineWidth(2.0f);
+        glBegin(GL_LINES);
+        glColor3fv(STICK_COLOR);
+        for (const auto& s : sticks) {
+            glVertex2f(points[s.p1].x, points[s.p1].y);
+            glVertex2f(points[s.p2].x, points[s.p2].y);
+        }
+        glEnd();
 
-			currentAngle += (direction * speed);
-			currentAngle = std::clamp(currentAngle, 20.0f, 160.0f);
-
-			float radians = currentAngle * (3.14159265f / 180.0f);
-			end.x = start.x + (length * std::cos(radians));
-			end.y = start.y + (length * std::sin(radians));
-		}
-
-		// Keep the same draw function from earlier...
-		void Draw(unsigned int shaderProgram) {
-			Vertex vertices[2] = { start, end };
-			
-			glBindVertexArray(mesh.VAO);
-			glBindBuffer(GL_ARRAY_BUFFER, mesh.VBO);
-
-			glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
-			glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-			glLineWidth(thickness);
-
-			glUseProgram(shaderProgram);
-			int offsetLocation = glGetUniformLocation(shaderProgram, "uOffset");
-			glUniform3f(offsetLocation, 0.0f, 0.0f, 0.0f); // No offset for lines
-			int colorLoc = glGetUniformLocation(shaderProgram, "uColor");
-			glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f); // Gray color
-
-			glBindVertexArray(mesh.VAO);
-			glDrawArrays(GL_LINES, 0, 2);
-			glBindVertexArray(0);
-
-			glLineWidth(1.0f);//reset thickness
-		}
-	};
-
-	
-}
-
-// OpenGL setup
-namespace {
-	GLuint compileShaderJ(const char* source, GLenum shaderType) {
-		GLuint shader = glCreateShader(shaderType);
-		glShaderSource(shader, 1, &source, NULL);
-		glCompileShader(shader);
-		// Check for compilation errors
-		GLint success;
-		glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-		if (!success) {
-			char infoLog[512];
-			glGetShaderInfoLog(shader, 512, NULL, infoLog);
-			std::cout << "ERROR::SHADER::COMPILATION_FAILED\n" << infoLog << std::endl;
-			return 0;
-		}
-		return shader;
-	}
-
-	GLuint createShaderProgramJ(const char* vertexSource, const char* fragmentSource) {
-		GLuint vertexShader = compileShaderJ(vertexSource, GL_VERTEX_SHADER);
-		GLuint fragmentShader = compileShaderJ(fragmentSource, GL_FRAGMENT_SHADER);
-		if (vertexShader == 0 || fragmentShader == 0) {
-			return 0;
-		}
-		GLuint shaderProgram = glCreateProgram();
-		glAttachShader(shaderProgram, vertexShader);
-		glAttachShader(shaderProgram, fragmentShader);
-		glLinkProgram(shaderProgram);
-		// Check for linking errors
-		GLint success;
-		glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
-		if (!success) {
-			char infoLog[512];
-			glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-			std::cout << "ERROR::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-			return 0;
-		}
-		glDeleteShader(vertexShader);
-		glDeleteShader(fragmentShader);
-		return shaderProgram;
-	}
-
-	void setOpenGLContextVersionJ(int major, int minor) {
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
-		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	}
-
-	void initializeGLADJ() {
-		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-			std::cout << "Failed to initialize GLAD" << std::endl;
-			glfwTerminate();
-			exit(-1);
-		}
-	}
-
-	void processInput(GLFWwindow* window, int &direction, Line &line, std::vector<std::unique_ptr<Circle>> &firedBalls) {
-		// Check continuous pressing of W/S/A/D keys
-		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-			glfwSetWindowShouldClose(window, true);
-		}
-		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			direction = 1; // Rotate counter-clockwise
-		}
-		else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			direction = -1; // Rotate clockwise
-		}
-		else {
-			direction = 0; // No rotation
-		}
-
-		static bool spaceWasPressed = false;
-		bool spaceIsPressed = (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS);
-		if (spaceIsPressed && !spaceWasPressed) {
-			// A. Find the vector direction of the line
-			float dx = line.end.x - line.start.x;
-			float dy = line.end.y - line.start.y;
-			float len = std::sqrt(dx * dx + dy * dy);
-
-			float dirX = dx / len;
-			float dirY = dy / len;
-
-			// B. Instantiate a NEW ball at the TIP of the line
-			auto newBall = std::make_unique<Circle>(line.end.x, line.end.y, 0.04f, 0.9f, 1.0f, 1.0f, 1.0f);
-
-			// C. Give the ball an internal velocity vector (Euler component)
-			float launchSpeed = 2.5f;
-			newBall->velocity.x = dirX * launchSpeed;
-			newBall->velocity.y = dirY * launchSpeed;
-
-			// D. Move it into your manager vector safely without copies
-			firedBalls.push_back(std::move(newBall));
-		}
-		spaceWasPressed = spaceIsPressed;
-	}
+        // Draw Points (Circles)
+        for (const auto& p : points) {
+            drawCircle(p.x, p.y, POINT_RADIUS, 20);
+        }
+    }
 }

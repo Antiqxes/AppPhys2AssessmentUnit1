@@ -1,2 +1,10 @@
 ﻿  main.cpp
+C:\Users\Jon Anthony\source\repos\AppPhys2AssessmentUnit1\Unit 1\Headers\JGL.h(102,30): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+  (compiling source file 'main.cpp')
+  
+C:\Users\Jon Anthony\source\repos\AppPhys2AssessmentUnit1\Unit 1\Headers\JGL.h(231,39): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+  (compiling source file 'main.cpp')
+  
+C:\Users\Jon Anthony\source\repos\AppPhys2AssessmentUnit1\Unit 1\main.cpp(32,20): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Users\Jon Anthony\source\repos\AppPhys2AssessmentUnit1\Unit 1\main.cpp(37,27): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
   Unit 1.vcxproj -> C:\Users\Jon Anthony\source\repos\AppPhys2AssessmentUnit1\x64\Debug\Unit 1.exe

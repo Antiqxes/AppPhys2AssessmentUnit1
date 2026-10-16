@@ -71,8 +71,8 @@ namespace {
     int draggedPointIndex = -1;
     float mouseX = 0.0f;
     float mouseY = 0.0f;
-    int windowWidth = 800;
-    int windowHeight = 800;
+    int windowWidth = 600;
+    int windowHeight = 600;
 
     // --- Initialize Simulation State ---
     void initSimulation() {

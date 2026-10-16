@@ -21,11 +21,15 @@ int main(void)
 
 	GLuint shaderProgram = createShaderProgramJ(vertexSource, fragmentSource); // Create the shader program
 
-    Circle turret(0.0f, -0.85f, 0.07f, 0.5f, 0.5f, 0.5f);
-    Circle ball(0.0f, -0.85f, 0.04f, 1.0f, 1.0f, 1.0f);
+    Circle turret(0.0f, -0.85f, 0.07f, 0.0f, 0.5f, 0.5f, 0.5f);
+    Circle ball(0.0f, -0.85f, 0.04f, 0.9f, 1.0f, 1.0f, 1.0f);
 	Line line(0.0f, -0.85f, 0.0f, -0.65f, 5.0f);
 	int direction = 0; // 0 = no movement, -1 = left, 1 = right
+
     std::vector<std::unique_ptr<Circle>> firedBalls;
+    firedBalls.push_back(std::make_unique<Circle>(-0.45f, 0.45f, 0.1f, 0.6f, 1.0f, 0.0f, 0.0f));
+	firedBalls.push_back(std::make_unique<Circle>(0.00f, 0.60f, 0.07f, 0.9f, 1.0f, 1.0f, 0.0f));
+	firedBalls.push_back(std::make_unique<Circle>(0.45f, 0.35f, 0.05f, 0.3f, 0.0f, 1.0f, 1.0f));
 
 
     float lastFrameTime = 0.0f;
@@ -42,11 +46,11 @@ int main(void)
 		line.Update(direction); // Update the line's position based on user input
 
 		for (auto& ball : firedBalls) {
-			ball->Update(deltaTime); // Update the position of each fired ball
+			ball->Update(deltaTime, firedBalls); // Update the position of each fired ball
 		}
 
         /* Render here */
-		glClearColor(0.08f, 0.28f, 0.42f, 1.0f);
+		glClearColor(0.05f, 0.35f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
 		turret.Draw(shaderProgram); // Draw the ball

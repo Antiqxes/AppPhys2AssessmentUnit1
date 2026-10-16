@@ -47,6 +47,7 @@ namespace {
 		Vertex velocity; // Velocity for movement
 		Vertex color; // Color of the circle
 		float radius; // Radius of the circle
+		float restitution; // Bounciness factor
 
 		// Helper static function to generate local vertex positions
 		static std::vector<Vertex> GenerateVertices(float radius, int segments) {
@@ -69,10 +70,12 @@ namespace {
 
 		Circle() = default;
 		// Constructor: Initializes properties and uploads vertices to the GPU
-		Circle(float startX, float startY, float r, float red, float green, float blue, int segments = 32) {
+		Circle(float startX, float startY, float r, float rest, float red, float green, float blue, int segments = 32) {
 			position = { startX, startY, 0.0f };
+			velocity = { 0.0f, 0.0f, 0.0f };
 			color = { red, green, blue };
 			radius = r;
+			restitution = rest;
 
 			// Generate geometry locally
 			std::vector<Vertex> vertices = GenerateVertices(radius, segments);
@@ -113,8 +116,63 @@ namespace {
 			glBindVertexArray(0);
 		}
 
+		void ResolveBallCollisions(std::vector<std::unique_ptr<Circle>>& balls) {
+			// Loop through every unique pair of balls
+			for (size_t i = 0; i < balls.size(); ++i) {
+				for (size_t j = i + 1; j < balls.size(); ++j) {
+					Circle& b1 = *balls[i];
+					Circle& b2 = *balls[j];
+
+					// 1. Calculate distance between centers
+					float dx = b2.position.x - b1.position.x;
+					float dy = b2.position.y - b1.position.y;
+					float distance = std::sqrt(dx * dx + dy * dy);
+					float minDistance = b1.radius + b2.radius;
+
+					// Check if they are overlapping
+					if (distance < minDistance) {
+						// Prevent division by zero if they are perfectly on top of each other
+						if (distance == 0.0f) continue;
+
+						// 2. Separate the balls (Resolve Overlap)
+						float overlap = minDistance - distance;
+						float nx = dx / distance; // Normal X
+						float ny = dy / distance; // Normal Y
+
+						// Push each ball away by half of the overlap
+						b1.position.x -= nx * overlap * 0.5f;
+						b1.position.y -= ny * overlap * 0.5f;
+						b2.position.x += nx * overlap * 0.5f;
+						b2.position.y += ny * overlap * 0.5f;
+
+						// 3. Calculate Relative Velocity along the collision normal
+						float kx = b1.velocity.x - b2.velocity.x;
+						float ky = b1.velocity.y - b2.velocity.y;
+						float vn = kx * nx + ky * ny; // Dot product
+
+						// Only resolve if they are moving towards each other
+						if (vn > 0.0f) {
+							// Combine restitution (you can use an average of both balls)
+							float mixedRestitution = (b1.restitution + b2.restitution) * 0.5f;
+
+							// Calculate impulse scalar (Assuming equal mass for simple geometry)
+							// If your balls have custom mass, the formula scales by mass.
+							float impulse = (1.0f + mixedRestitution) * vn * 0.5f;
+
+							// Apply impulse to change velocities
+							b1.velocity.x -= impulse * nx;
+							b1.velocity.y -= impulse * ny;
+							b2.velocity.x += impulse * nx;
+							b2.velocity.y += impulse * ny;
+						}
+					}
+				}
+			}
+		}
+
+
 		// Clean up graphics memory allocated inside the Mesh fields
-		void Update(float deltaTime) {
+		void Update(float deltaTime, std::vector<std::unique_ptr<Circle>>& firedBalls) {
 			// 1. Move the ball
 			position.x += velocity.x * deltaTime;
 			position.y += velocity.y * deltaTime;
@@ -124,10 +182,12 @@ namespace {
 			float boundaryY = 1.0f - radius;
 
 			// 3. Bounce logic
-			if (position.x > boundaryX) { position.x = boundaryX; velocity.x *= -1.0f; }
-			if (position.x < -boundaryX) { position.x = -boundaryX; velocity.x *= -1.0f; }
-			if (position.y > boundaryY) { position.y = boundaryY; velocity.y *= -1.0f; }
-			if (position.y < -boundaryY) { position.y = -boundaryY; velocity.y *= -1.0f; }
+			ResolveBallCollisions(firedBalls); // Call the collision resolution function
+
+			if (position.x > boundaryX) { position.x = boundaryX; velocity.x *= -restitution; }
+			if (position.x < -boundaryX) { position.x = -boundaryX; velocity.x *= -restitution; }
+			if (position.y > boundaryY) { position.y = boundaryY; velocity.y *= -restitution; }
+			if (position.y < -boundaryY) { position.y = -boundaryY; velocity.y *= -restitution; }
 		}
 	};
 
@@ -163,7 +223,7 @@ namespace {
 			glBindVertexArray(0);
 		}
 
-		void Update(int direction, float speed = 1.2f) {
+		void Update(int direction, float speed = 0.2f) {
 			if (direction == 0) return;
 
 			float dx = end.x - start.x;
@@ -290,7 +350,7 @@ namespace {
 			float dirY = dy / len;
 
 			// B. Instantiate a NEW ball at the TIP of the line
-			auto newBall = std::make_unique<Circle>(line.end.x, line.end.y, 0.04f, 1.0f, 1.0f, 1.0f);
+			auto newBall = std::make_unique<Circle>(line.end.x, line.end.y, 0.04f, 0.9f, 1.0f, 1.0f, 1.0f);
 
 			// C. Give the ball an internal velocity vector (Euler component)
 			float launchSpeed = 2.5f;
